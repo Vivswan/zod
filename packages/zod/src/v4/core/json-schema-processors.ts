@@ -68,7 +68,11 @@ const setFormat = (agg: CheckAggregate, format: string): void => {
   if (format.includes("int")) agg.isInt = true;
 };
 
-type Contributor = (agg: CheckAggregate, def: any) => void;
+// a trait read, unlike instanceof, keeps $ZodCheckStringFormat out of mini bundles that never build one
+const hasTrait = (check: checks.$ZodCheck, trait: string): boolean =>
+  (check._zod as { traits?: Set<string> }).traits?.has(trait) ?? false;
+
+type Contributor = (agg: CheckAggregate, def: any, check: checks.$ZodCheck) => void;
 const minContributor: Contributor = (agg, def) => narrowMin(agg, "minimum", def.minimum);
 const maxContributor: Contributor = (agg, def) => narrowMax(agg, "maximum", def.maximum);
 const formatContributor =
@@ -92,8 +96,9 @@ const contributors: Record<string, Contributor> = {
   min_size: minContributor,
   max_size: maxContributor,
   size_equals: (agg, def) => narrowBoth(agg, def.size),
-  string_format: (agg, def) => {
-    setFormat(agg, def.format);
+  string_format: (agg, def, check) => {
+    // includes/startsWith/endsWith are plain checks whose pattern is the whole constraint (#6648)
+    if (hasTrait(check, "$ZodCheckStringFormat")) setFormat(agg, def.format);
     if (def.pattern) addPattern(agg, def.pattern);
     if (def.format === "base64" || def.format === "base64url") agg.contentEncoding = def.format;
     if (def.local || def.precision === -1) agg.laxFormat = true;
@@ -108,7 +113,7 @@ export function aggregateChecks<N extends Bound = Bound>(schema: schemas.$ZodTyp
   const list: checks.$ZodCheck[] = schema._zod.traits.has("$ZodCheck")
     ? [schema as unknown as checks.$ZodCheck, ...(def.checks ?? [])]
     : (def.checks ?? []);
-  for (const ch of list) contributors[ch._zod.def.check]?.(agg, ch._zod.def);
+  for (const ch of list) contributors[ch._zod.def.check]?.(agg, ch._zod.def, ch);
 
   // reconcile with the bag so third-party onattach contributions still land; first-party residue is never tighter than the fold, so merging it back is idempotent for one and additive for the other
   const bag = schema._zod.bag as Omit<CheckAggregate, "multipleOf"> & { multipleOf?: number };

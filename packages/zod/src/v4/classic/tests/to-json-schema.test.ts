@@ -593,6 +593,19 @@ describe("toJSONSchema", () => {
     `);
   });
 
+  test("includes, startsWith and endsWith emit a pattern and no format (#6648)", () => {
+    const without$schema = (schema: z.ZodType) => {
+      const { $schema, ...rest } = z.toJSONSchema(schema);
+      return rest;
+    };
+    expect(without$schema(z.string().includes("x"))).toEqual({ type: "string", pattern: "x" });
+    expect(without$schema(z.string().startsWith("x"))).toEqual({ type: "string", pattern: "^x.*" });
+    expect(without$schema(z.string().endsWith("x"))).toEqual({ type: "string", pattern: ".*x$" });
+    // a real format chained before them is kept
+    expect(z.toJSONSchema(z.email().startsWith("a")).format).toBe("email");
+    expect(z.toJSONSchema(z.url().endsWith("a")).format).toBe("uri");
+  });
+
   test("includes with position emits a pattern matching runtime semantics", () => {
     // String.prototype.includes(sub, position) matches `sub` at `position` OR
     // LATER, so the JSON Schema pattern must allow >= position leading chars.
